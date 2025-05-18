@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_CAPSTONE
+	bool "python-capstone"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  Capstone is a disassembly framework with the target of becoming the ultimate disasm engine for binary analysis and reversing in the security community.
+
+	  https://www.capstone-engine.org/

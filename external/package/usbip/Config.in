@@ -1,0 +1,22 @@
+config BR2_PACKAGE_USBIP
+	bool"usbip"
+	help
+	  usbip is a set of tools that allows machines to share their
+	  usb devices over the network, to be driven by a remote client.
+comment "usbip requires a toolchain with WCHAR support"
+        depends on !BR2_USE_WCHAR
+
+if BR2_PACKAGE_USBIP
+
+config BR2_USBIP_CLIENT
+	bool "usbip client"
+	default y
+	help
+	  the client part of usbip
+
+config BR2_USBIP_SERVER
+	bool "usbip server"
+	help
+	  the server part of usbip
+
+endif

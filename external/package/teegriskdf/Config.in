@@ -1,0 +1,8 @@
+config BR2_PACKAGE_TEEGRISKDF
+	bool"teegriskdf"
+	depends on BR2_PACKAGE_LIBOPENSSL
+	help
+	  teegriskdf
+comment "teegriskdf requires openssl"
+	depends on !BR2_PACKAGE_LIBOPENSSL
+

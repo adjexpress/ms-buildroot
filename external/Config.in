@@ -1,0 +1,1 @@
+source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/Config.in"

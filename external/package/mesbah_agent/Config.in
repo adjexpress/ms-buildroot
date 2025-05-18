@@ -1,0 +1,8 @@
+config BR2_PACKAGE_MESBAH_AGENT
+	bool"mesbah_agent"
+	depends on BR2_PACKAGE_LIBOPENSSL
+	help
+	  mesbah on device agent (server)
+comment "mesbah_agent requires openssl"
+	depends on !BR2_PACKAGE_LIBOPENSSL
+

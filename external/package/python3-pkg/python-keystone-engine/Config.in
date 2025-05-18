@@ -1,0 +1,9 @@
+config BR2_PACKAGE_PYTHON_KEYSTONE_ENGINE
+	bool "python-keystone-engine"
+	depends on BR2_PACKAGE_PYTHON3
+# 	depends on BR2_PACKAGE_HOST_PYTHON
+	
+	help
+	  Keystone is a lightweight multi-platform, multi-architecture assembler framework. It offers some unparalleled features:
+
+	  https://www.keystone-engine.org/

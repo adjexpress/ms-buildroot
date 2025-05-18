@@ -1,0 +1,4 @@
+config BR2_PACKAGE_METADATA_DECRYPT
+	bool"metadata_decrypt"
+	help
+	  metadata_decrypt

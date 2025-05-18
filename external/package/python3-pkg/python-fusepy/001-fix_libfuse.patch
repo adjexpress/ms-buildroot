@@ -1,0 +1,15 @@
+diff --git a/fuse.py b/fuse.py
+index 7c2ddc4..13d3f5a 100644
+--- a/fuse.py
++++ b/fuse.py
+@@ -111,6 +111,10 @@ if not _libfuse_path:
+     else:
+         _libfuse_path = find_library('fuse')
+ 
++
++_libfuse_path = 'libfuse.so'
++
++
+ if not _libfuse_path:
+     raise EnvironmentError('Unable to find libfuse')
+ else:

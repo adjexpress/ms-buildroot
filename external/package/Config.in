@@ -1,0 +1,10 @@
+
+menu "Mesbah Tools"
+    source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/python3-pkg/Config.in"
+    source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/python/Config.in"
+    source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/usbip/Config.in"
+    source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/mesbah_agent/Config.in"
+    source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/teegriskdf/Config.in"
+    source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/metadata_decrypt/Config.in"
+endmenu
+

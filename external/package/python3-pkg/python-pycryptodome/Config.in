@@ -1,0 +1,7 @@
+config BR2_PACKAGE_PYTHON_CRYPTODOME
+	bool "python-pycryptodome"
+	depends on BR2_PACKAGE_PYTHON3
+	help
+	  PyCryptodome is a self-contained Python package of low-level cryptographic primitives.
+
+	  https://www.pycryptodome.org/

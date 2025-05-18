@@ -1,0 +1,8 @@
+config BR2_PACKAGE_PYTHON_FUSEPY
+	bool "python-fusepy"
+	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_LIBFUSE
+	help
+	  fusepy is a Python module that provides a simple interface to FUSE and MacFUSE. It’s just one file and is implemented using ctypes.
+
+	  http://github.com/fusepy/fusepy
