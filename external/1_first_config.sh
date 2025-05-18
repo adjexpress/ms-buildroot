@@ -1,7 +1,7 @@
 # source .env
 # make -C ../buildroot menuconfig
 # CONFIG=br_qemu_x86_64_defconfig
-CONFIG=qemu_x86_64_testconfig
+CONFIG=qemu_x86_64_latest_defconfig
 
 mkdir -p output
 # cp local.mk.tmp output/local.mk
