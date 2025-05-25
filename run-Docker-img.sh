@@ -17,7 +17,7 @@ function run_image(){
         -v $HOST_SRC_PATH:$CONTAINER_SRC_PATH \
         -v $HOST_LAB_PATH:$CONTAINER_LAB_PATH \
         --ulimit "nofile=1024:1048576" \
-        build_env \
+        workspace \
         zsh
 #         -v /dev:/dev \
 }
