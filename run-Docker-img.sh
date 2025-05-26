@@ -8,7 +8,7 @@ function bind_mount(){
 }
 
 function run_image(){
-    docker run  \
+    sudo docker run  \
         --privileged=true  \
         -it \
         -i \
