@@ -8,12 +8,12 @@
 
 run_target() {
 	printf 'Starting Target Application: '
-	/opt/target
+	/opt/target >&4
 }
 
 stop_target() {
 	printf 'Stoping Target Application: '
-	killall target
+	killall target >&4
 }
 
 
