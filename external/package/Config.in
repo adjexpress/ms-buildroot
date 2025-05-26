@@ -6,5 +6,6 @@ menu "Mesbah Tools"
     source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/mesbah_agent/Config.in"
     source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/teegriskdf/Config.in"
     source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/metadata_decrypt/Config.in"
+    source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/fscrypt_keyutil/Config.in"
 endmenu
 

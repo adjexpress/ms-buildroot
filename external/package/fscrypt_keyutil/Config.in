@@ -1,0 +1,5 @@
+config BR2_PACKAGE_FSCRYPT_KEYUTIL
+	bool"fscrypt_keyutil"
+	select BR2_PACKAGE_KEYUTILS
+	help
+	  fscrypt keyutil
