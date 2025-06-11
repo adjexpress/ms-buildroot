@@ -1,8 +1,10 @@
 #ifndef _PACKET__H__
 #define _PACKET__H__
 
-// a guide macro
-#define __THIS_FUNCTION_IS_LINUX_SPECIFIC__
+#include <fstream>
+
+#define TRUE  1
+#define FALSE 0
 
 // AES CBC PKCS PADDING
 #define AES_CBC_PKCS_PADDING 0x10
@@ -12,33 +14,57 @@
 #define MB(NUM) ((KB(NUM)) << 10)
 #define GB(NUM) ((MB(NUM)) << 10)
 
-// define DEBUG_LOG
+// Release_logger
+extern std::ofstream ___release_log_object_v4_0___;
+
+// Release_logger already openned flag
+static bool ___release_logg_objec_v4_0_openned___ = false;
+
+// Release_log implementation
+#define LOG_impl(__msg, __enter_at_the_end) do {                                               \
+	time_t __time;                                                                             \
+	time(&__time);                                                                             \
+	char* __time_string = ctime(&__time);                                                      \
+	__time_string[strlen(__time_string) - 1] = 0;                                              \
+	if (___release_logg_objec_v4_0_openned___ == false)                                        \
+	{                                                                                          \
+		___release_log_object_v4_0___.open("MesbahAgentLog.txt", std::ios::app);               \
+		___release_log_objec_v4_0_openned___ = true;                                           \
+	}                                                                                          \
+	___release_log_object_v4_0___ << "[" << __time_string << " :: " << __FUNCTION__ << " -> "; \
+	if (__enter_at_the_end)                                                                    \
+		___release_log_object_v4_0___ << __msg << std::endl;                                   \
+	else                                                                                       \
+		___release_log_object_v4_0___ << __msg;                                                \
+} while (false);
+
+// define DEBUG_MsA_LOG
 #ifdef _WIN32
 #	ifdef _DEBUG
 #		define LOG(__EXPR__) std::cout << __EXPR__ << std::endl;
 #	else
-#		define LOG(__EXPR__) ;
+#		define LOG(__EXPR__) LOG_impl(__EXPR__, true)
 #	endif
 #elif defined (__linux__)
 #	ifdef DEBUG
 #		define LOG(__EXPR__) std::cout << __EXPR__ << std::endl;
 #	else
-#		define LOG(__EXPR__) ;
+#		define LOG(__EXPR__) LOG_impl(__EXPR__, true)
 #	endif
 #endif
 
-// define DEBUG_LOG2
+// define DEBUG_MsA_LOG2
 #ifdef _WIN32
 #	ifdef _DEBUG
 #		define LOG2(__EXPR__) std::cout << __EXPR__;
 #	else
-#		define LOG2(__EXPR__) ;
+#		define LOG2(__EXPR__) LOG_impl(__EXPR__, false)
 #	endif
 #elif defined (__linux__)
 #	ifdef DEBUG
 #		define LOG2(__EXPR__) std::cout << __EXPR__;
 #	else
-#		define LOG2(__EXPR__) ;
+#		define LOG2(__EXPR__) LOG_impl(__EXPR__, false)
 #	endif
 #endif
 
@@ -57,18 +83,14 @@
 #include <time.h>
 #include <sstream> 
 #include <iterator>
-//#include <filesystem> // There is problems with running std::filesystem on Android machines
 
 // Platform specific header files
 #ifdef _WIN32
 #ifndef __LLVM__
 #		include "libtcp.h"
+#		include "Encryption.h"
 #endif
 #		include <Windows.h>
-#       include "Encryption.h"
-#		include "zip/miniz.h"
-#		include "zip/ZipArchive.h"
-#		include "zip/Zip.h"
 #elif defined (__linux__)
 #		include <netinet/tcp.h>
 #		include <sys/socket.h>
@@ -90,8 +112,16 @@
 #       include "../include/Encryption.h"
 #endif
 
-// Encryption object declared externally
-extern Encryption* encryption;
+// a guide macro
+#define __THIS_FUNCTION_IS_LINUX_SPECIFIC__
+
+// AES CBC PKCS PADDING
+#define AES_CBC_PKCS_PADDING 0x10
+
+// Block size macros
+#define KB(NUM) ((NUM) << 10)
+#define MB(NUM) ((KB(NUM)) << 10)
+#define GB(NUM) ((MB(NUM)) << 10)
 
 // Some linux-specific file handling
 #ifdef __linux__
@@ -331,7 +361,7 @@ void         start_get_file_packet            (Packet* packet, const std::string
 /// @param file_size
 /// @return nothing
 ///
-void         reply_start_get_file_packet      (Packet* packet, const std::string& message, unsigned int file_size);
+void         reply_start_get_file_packet      (Packet* packet, const std::string& message, unsigned long long file_size);
 
 /// setting a data get file packet fields
 /// @param packet
@@ -344,7 +374,7 @@ void         data_get_file_packet             (Packet* packet);
 /// @param data_size
 /// @return nothing
 ///
-void         reply_data_get_file_packet       (Packet* packet, unsigned int data_size);
+void         reply_data_get_file_packet       (Packet* packet, unsigned long long data_size);
 
 /// setting a get directories packet fields
 /// @param packet
@@ -359,7 +389,7 @@ void         get_directories_packet           (Packet* packet, const std::string
 /// @param number_of_directories
 /// @return nothing
 ///
-void         reply_get_directories_packet     (Packet* packet, const std::string& message, unsigned int number_of_directories);
+void         reply_get_directories_packet     (Packet* packet, const std::string& message, unsigned long long number_of_directories);
 
 /// setting a get files packet fields
 /// @param packet
@@ -374,7 +404,7 @@ void         get_files_packet                 (Packet* packet, const std::string
 /// @param number_of_files
 /// @return nothing
 ///
-void         reply_get_files_packet           (Packet* packet, const std::string& message, unsigned int number_of_files);
+void         reply_get_files_packet           (Packet* packet, const std::string& message, unsigned long long number_of_files);
 
 /// setting a termination packet fields
 /// @param packet
@@ -460,7 +490,7 @@ void         start_packet                     (Packet*& packet, Header_Types typ
 /// @param buffer_pointer -> it will be populated by data
 /// @return unsigned int -> size of prepared data
 /// 
-unsigned int prepare_final_message            (Packet* packet, const std::string& message, std::unique_ptr<char[]>& buffer_pointer);
+unsigned int prepare_final_message            (Packet* packet, const std::string& message, std::unique_ptr<char[]>& buffer_pointer, Encryption* enc);
 
 /// taking a packet and prepare it (with encryption and body allocation) for the very last 'send' on TCP
 /// @param packet -> containing a packet
@@ -469,7 +499,7 @@ unsigned int prepare_final_message            (Packet* packet, const std::string
 /// @param buffer_pointer -> it will be populated by data
 /// @return unsigned int -> size of prepared data
 /// 
-unsigned int prepare_final_message            (Packet* packet, char* message, unsigned long long message_size, std::unique_ptr<char[]>& buffer_pointer);
+unsigned int prepare_final_message            (Packet* packet, char* message, unsigned long long message_size, std::unique_ptr<char[]>& buffer_pointer, Encryption* enc);
 
 /// LINUX specific reading a packet
 /// @param packet -> containing a packet
@@ -486,7 +516,7 @@ void         read_a_packet_from_socket        (Packet* packet, bool& connection_
 /// 
 
 #ifdef _WIN32
-void         read_a_packet_from_socket        (MESBAH::Tcp* tcp, Packet* packet);
+void         win_read_a_packet_from_socket        (MESBAH::Tcp* tcp, Packet* packet);
 #endif
 
 /// evaluates checksum of a packet (it is a wrapper around 'checksum_calculation')
@@ -508,6 +538,15 @@ std::string  error_message                    (Error_Types err);
 /// @param err
 /// @return nothing
 /// 
-void         set_error_packet                 (int socket, Packet* packet, Error_Types err);
+void         set_error_packet                 (int socket, Packet* packet, Error_Types err, Encryption* enc);
+
+/// sets an error packet with specific error type and 'send' in on TCP
+/// @param tcp
+/// @param packet
+/// @param err
+/// @return nothing
+#ifdef _WIN32
+void         win_set_error_packet             (MESBAH::Tcp* tcp, Packet* packet, Error_Types err, Encryption* enc);
+#endif 
 
 #endif

@@ -1,0 +1,12 @@
+wheel
+setuptools
+pyusb
+pycryptodome
+pycryptodomex
+colorama
+shiboken6
+mock
+pyserial
+flake8
+fusepy
+

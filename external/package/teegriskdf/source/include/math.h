@@ -18,6 +18,6 @@ typedef struct _HDK {
 } __attribute__((packed)) HDK; //  64 bytes
 
 // perform xor operation on 16 bytes of 'input' bytes with 'xor' bytes and save them in 'output' bytes
-void xor_16_bytes_arrays(Uint8_t* output, Uint8_t* input, Uint8_t* xor);
+void xor_16_bytes_arrays(Uint8_t* output, const Uint8_t* input, Uint8_t* xor);
 
 #endif //! _MATH__H__

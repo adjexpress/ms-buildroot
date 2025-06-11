@@ -1,16 +1,25 @@
 #include "../include/core.h"
 
 // dump in HEX, buffer 'buffer' with size 'size'
-void dump_buffer(Uint8_t* buffer, size_t size)
+void dump_buffer(Boolean PRIORITY, Uint8_t* buffer, size_t size)
 {
     Uint32_t index = 0x10;
-	printf("0x00\t\t|");
+	HDK_LOG(PRIORITY, "0x00\t\t|");
 	for (size_t i = 0; i < size; i++)
 	{
 		if(i && !(i % 0x10))
-			printf("\n0x%x\t\t|", index += 0x10);
-		printf("%s%x ", (buffer[i] < 0x10 ? "0x0" : "0x"), (int)buffer[i]);
+			HDK_LOG(PRIORITY, "\n0x%x\t\t|", index += 0x10);
+		HDK_LOG(PRIORITY, "%s%x ", (buffer[i] < 0x10 ? "0x0" : "0x"), (int)buffer[i]);
 	}
+    HDK_LOG(PRIORITY, "\n");
+}
+
+//
+void raw_dump_buffer(Uint8_t* buffer, size_t size)
+{
+    Uint32_t index = 0x10;
+	for (size_t i = 0; i < size; i++)
+		printf("%s%x", (buffer[i] < 0x10 ? "0" : ""), (int)buffer[i]);
     printf("\n");
 }
 

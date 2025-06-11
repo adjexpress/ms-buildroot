@@ -1,10 +1,15 @@
-#ifdef _WIN32
+#ifdef WIN32
 #		include "Packet.h"
-#elif defined (__linux__)
+#		include "libtcp.h"
+#		include "Encryption.h"
+#elif defined __linux__
 #		include "../include/Packet.h"
+#		include "../include/Encryption.h"
 #endif
 
-//********************************************************************************************************************************************************
+// Release_logger
+std::ofstream ___release_log_object_v4_0___;
+
 // we use CRC32 polynomial 0xEDB88320
 unsigned int checksum_calculation(char* buffer, unsigned long long length)
 {
@@ -33,7 +38,6 @@ unsigned int checksum_calculation(char* buffer, unsigned long long length)
 	return ~crc;
 }
 
-//********************************************************************************************************************************************************
 // demp a packet in STDOUT
 void report_packet(Packet* packet, bool with_body_data)
 {
@@ -63,7 +67,6 @@ void report_packet(Packet* packet, bool with_body_data)
 	LOG("Packet end_magic_number: " << packet->end_magic_number);
 }
 
-//********************************************************************************************************************************************************
 // create a readable string from err
 std::string error_message(Error_Types err)
 {
@@ -122,8 +125,6 @@ std::string error_message(Error_Types err)
 	return ret;
 }
 
-//********************************************************************************************************************************************************
-
 std::string repeat_string(const std::string& str, unsigned int repeat_count)
 {
 	std::string ret = "";
@@ -132,9 +133,9 @@ std::string repeat_string(const std::string& str, unsigned int repeat_count)
 	return ret;	
 }
 
-//********************************************************************************************************************************************************
+#ifdef __linux__
 // packet must have been forwarded by server or client
-void set_error_packet(int socket, Packet* packet, Error_Types err)
+void set_error_packet(int socket, Packet* packet, Error_Types err, Encryption* enc)
 {
 	// start an empty packet
 	start_packet(packet, NONE);
@@ -150,10 +151,10 @@ void set_error_packet(int socket, Packet* packet, Error_Types err)
 	packet->header.TotalFileSize = 0ULL;
 
 	// prepare the final message
-	unsigned int packet_size = prepare_final_message(packet, error_message_string, final_message);
+	unsigned int packet_size = prepare_final_message(packet, error_message_string, final_message, enc);
 
 	// send the prepared_message to the other side
-	send(socket, final_message.get(), packet_size, 0);
+	::send(socket, final_message.get(), packet_size, 0);
 
 	// clean up the packet command string holder
 	delete[] packet->body;
@@ -161,8 +162,39 @@ void set_error_packet(int socket, Packet* packet, Error_Types err)
 	// clean up the allocated packet from start_packet call
 	delete packet;
 }
+#endif
 
-//********************************************************************************************************************************************************
+#ifdef WIN32
+// packet must have been forwarded by server or client
+void win_set_error_packet(MESBAH::Tcp* tcp, Packet* packet, Error_Types err, Encryption* enc)
+{
+	// start an empty packet
+	start_packet(packet, NONE);
+
+	// define the readable string error message holder
+	std::string error_message_string = error_message(err);
+
+	// create a buffer for the final message to be sent
+	std::unique_ptr<char[]> final_message {nullptr};
+
+	// set the header's SizeBody and TotalFileSize
+	packet->header.SizeBody = error_message_string.size();
+	packet->header.TotalFileSize = 0ULL;
+
+	// prepare the final message
+	unsigned int packet_size = prepare_final_message(packet, error_message_string, final_message, enc);
+
+	// send the prepared_message to the other side
+	tcp->Send(final_message.get(), packet_size);
+
+	// clean up the packet command string holder
+	delete[] packet->body;
+
+	// clean up the allocated packet from start_packet call
+	delete packet;
+}
+#endif
+
 // we pass a Packet address by reference and this function allocates it. Caller is responsible to free the memory
 void start_packet(Packet*& packet, Header_Types type)
 {
@@ -182,7 +214,6 @@ void start_packet(Packet*& packet, Header_Types type)
 	set_type_of_header(&packet->header, type);
 }
 
-//********************************************************************************************************************************************************
 // evaluates checksum field of the packet and recalculates checksum of header and body fields of the packet.
 // In case they both match, returns true.
 bool evaluate_checksum(Packet* packet)
@@ -212,7 +243,6 @@ bool evaluate_checksum(Packet* packet)
 	return (checksum == packet->checksum) ? true : false;
 }
 
-//********************************************************************************************************************************************************
 // set SHELL type packet necessary fields
 void shell_packet(Packet* packet, const std::string& command)
 {
@@ -220,7 +250,6 @@ void shell_packet(Packet* packet, const std::string& command)
 	packet->header.TotalFileSize = 0;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_SHELL type packet necessary fields
 void reply_shell_packet(Packet* packet, const std::string& executed_shell_message)
 {
@@ -228,7 +257,6 @@ void reply_shell_packet(Packet* packet, const std::string& executed_shell_messag
 	packet->header.TotalFileSize = 0;
 }
 
-//********************************************************************************************************************************************************
 // set START_SEND_FILE type packet necessary fields
 void start_send_file_packet (Packet* packet, const std::string& file_address, unsigned long long file_size)
 {
@@ -236,7 +264,6 @@ void start_send_file_packet (Packet* packet, const std::string& file_address, un
 	packet->header.TotalFileSize = (file_size + (AES_CBC_PKCS_PADDING - 1)) & ~(AES_CBC_PKCS_PADDING - 1);
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_START_SEND_FILE type packet necessary fields
 void reply_start_send_file_packet (Packet* packet, const std::string& message)
 {
@@ -244,7 +271,6 @@ void reply_start_send_file_packet (Packet* packet, const std::string& message)
 	packet->header.TotalFileSize = 0;
 }
 
-//********************************************************************************************************************************************************
 // set DATA_SEND_FILE type packet necessary fields
 void data_send_file_packet(Packet* packet, unsigned long long data_size)
 {
@@ -252,7 +278,6 @@ void data_send_file_packet(Packet* packet, unsigned long long data_size)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_DATA_SEND_FILE type packet necessary fields
 void reply_data_send_file_packet(Packet* packet, const std::string& message)
 {
@@ -260,7 +285,6 @@ void reply_data_send_file_packet(Packet* packet, const std::string& message)
 	packet->header.TotalFileSize = 0;
 }
 
-//********************************************************************************************************************************************************
 // set START_GET_FILE type packet necessary fields
 void start_get_file_packet(Packet* packet, const std::string& file_address)
 {
@@ -268,15 +292,13 @@ void start_get_file_packet(Packet* packet, const std::string& file_address)
 	packet->header.TotalFileSize = 0;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_START_GET_FILE type packet necessary fields
-void reply_start_get_file_packet(Packet* packet, const std::string& message, unsigned int file_size)
+void reply_start_get_file_packet(Packet* packet, const std::string& message, unsigned long long file_size)
 {
 	packet->header.SizeBody = message.size();
 	packet->header.TotalFileSize = file_size;
 }
 
-//********************************************************************************************************************************************************
 // set DATA_GET_FILE type packet necessary fields
 void data_get_file_packet(Packet* packet)
 {
@@ -284,15 +306,13 @@ void data_get_file_packet(Packet* packet)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_DATA_GET_FILE type packet necessary fields
-void reply_data_get_file_packet(Packet* packet, unsigned int data_size)
+void reply_data_get_file_packet(Packet* packet, unsigned long long data_size)
 {
 	packet->header.SizeBody = data_size;
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set GET_DIRECTORIES type packet necessary fields
 void get_directories_packet(Packet* packet, const std::string& location)
 {
@@ -300,15 +320,13 @@ void get_directories_packet(Packet* packet, const std::string& location)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_GET_DIRECTORIES type packet necessary fields
-void reply_get_directories_packet (Packet* packet, const std::string& message, unsigned int number_of_directories)
+void reply_get_directories_packet (Packet* packet, const std::string& message, unsigned long long number_of_directories)
 {
 	packet->header.SizeBody = message.size();
 	packet->header.TotalFileSize = number_of_directories;
 }
 
-//********************************************************************************************************************************************************
 // set GET_FILES type packet necessary fields
 void get_files_packet(Packet* packet, const std::string& location)
 {
@@ -316,15 +334,13 @@ void get_files_packet(Packet* packet, const std::string& location)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_GET_FILES type packet necessary fields
-void reply_get_files_packet(Packet* packet, const std::string& message, unsigned int number_of_files)
+void reply_get_files_packet(Packet* packet, const std::string& message, unsigned long long number_of_files)
 {
 	packet->header.SizeBody = message.size();
 	packet->header.TotalFileSize = number_of_files;
 }
 
-//********************************************************************************************************************************************************
 // set TERMINATION type packet necessary fields
 void termination_packet(Packet* packet, const std::string& command)
 {
@@ -332,7 +348,6 @@ void termination_packet(Packet* packet, const std::string& command)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set EXECUTE type packet necessary fields
 void execute_packet(Packet* packet, const std::string& command)
 {
@@ -340,7 +355,6 @@ void execute_packet(Packet* packet, const std::string& command)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_EXECUTE type packet necessary fields
 void reply_execute_packet(Packet* packet, Wrapped_Index index)
 {
@@ -348,7 +362,6 @@ void reply_execute_packet(Packet* packet, Wrapped_Index index)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set EXECUTE type packet necessary fields
 void read_from_stdout_packet(Packet* packet, const std::string& command)
 {
@@ -356,7 +369,6 @@ void read_from_stdout_packet(Packet* packet, const std::string& command)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set EXECUTE type packet necessary fields
 void reply_read_from_stdout_packet(Packet* packet, const std::string& message)
 {
@@ -364,7 +376,6 @@ void reply_read_from_stdout_packet(Packet* packet, const std::string& message)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set WRITE_TO_STDIN type packet necessary fields
 void write_to_stdin_packet(Packet* packet, const std::string& message)
 {
@@ -372,7 +383,6 @@ void write_to_stdin_packet(Packet* packet, const std::string& message)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_WRITE_TO_STDIN type packet necessary fields
 void reply_write_to_stdin_packet(Packet* packet, const std::string& message)
 {
@@ -380,7 +390,6 @@ void reply_write_to_stdin_packet(Packet* packet, const std::string& message)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set TERMINATE_EXECUTION type packet necessary fields
 
 void terminate_execution_packet(Packet* packet, const std::string& message)
@@ -389,7 +398,6 @@ void terminate_execution_packet(Packet* packet, const std::string& message)
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // set REPLY_TERMINATE_EXECUTION type packet necessary fields
 void reply_terminate_execution_packet(Packet* packet, const std::string& message)
 {
@@ -397,10 +405,9 @@ void reply_terminate_execution_packet(Packet* packet, const std::string& message
 	packet->header.TotalFileSize = 0ULL;
 }
 
-//********************************************************************************************************************************************************
 // Gets a Packet, a message string, a buffer pointer, and the size of the buffer pointer to be filled up
 // It goes byte-by-byte to copy header, actual message data, checksum, and end_magic_number of the packet into the buffer pointer
-unsigned int prepare_final_message(Packet* packet, const std::string& message, std::unique_ptr<char[]>& buffer_pointer)
+unsigned int prepare_final_message(Packet* packet, const std::string& message, std::unique_ptr<char[]>& buffer_pointer, Encryption* enc)
 {
 	// define a holder to keep track of the encrypted len
 	int ciphertext_len = 0;
@@ -408,15 +415,7 @@ unsigned int prepare_final_message(Packet* packet, const std::string& message, s
 	// set the packet size
 	unsigned int packet_size = message.size() + sizeof(packet->header)
 		+ sizeof(packet->checksum)
-		+ sizeof(packet->end_magic_number) + 1;	
-
-	// Do we have any message?
-	if (message.size() > 0)
-	{
-		// Considering a block size (32), maximum padding will be 31 bytes long.
-		// Hence, add 32 to include the maximum length of cipher message with padding.
-		packet_size += 32;
-	}
+		+ sizeof(packet->end_magic_number) + 1 + ((enc == nullptr) ? 0: 32);	
 
 	// allocate buffer_pointer
 	buffer_pointer = std::make_unique<char[]>(packet_size);
@@ -431,7 +430,8 @@ unsigned int prepare_final_message(Packet* packet, const std::string& message, s
 		unsigned char* ciphertext = new unsigned char[ message.size() + 32 ];
 
 		// Encrypt the message
-		ciphertext_len = encryption->encrypt(reinterpret_cast<unsigned char*>(const_cast<char*>(message.c_str())), static_cast<int>(message.size()), ciphertext);
+		if (enc != nullptr)
+			ciphertext_len = enc->encrypt((unsigned char*)message.c_str(), message.size(), ciphertext);
 
 		// Check out the validity
 		if (ciphertext_len == -1)
@@ -442,12 +442,11 @@ unsigned int prepare_final_message(Packet* packet, const std::string& message, s
 			// We do not need the allocated encryption buffer anymore, as such, free it
 			delete[] ciphertext;
 
-			// return error value
 			return static_cast<unsigned int>(~0);
 		}
 
 		// Update header's SizeBody, because the message has been encrypted
-		packet->header.SizeBody = ciphertext_len;
+		packet->header.SizeBody = (enc == nullptr) ? message.size() : ciphertext_len;
 
 		// copy header field of the packet into the buffer
 		memcpy(bp, &(packet->header), sizeof(Header));
@@ -456,13 +455,21 @@ unsigned int prepare_final_message(Packet* packet, const std::string& message, s
 		bp += sizeof(Header);
 
 		// Copy the encrypted message into buffer
-		std::memcpy(bp, ciphertext, ciphertext_len); //std::memcpy(bp, message.c_str(), message.size());
+		if (enc == nullptr)
+		{
+			std::memcpy(bp, message.c_str(), message.size());
+			bp += message.size();
+		}
+		else
+		{
+			std::memcpy(bp, ciphertext, ciphertext_len);
 
-		// increment the indexer again		
-		bp += ciphertext_len; //bp += message.size();
+			// increment the indexer again		
+			bp += ciphertext_len;
 
-		// We do not need the allocated encryption buffer anymore, as such, free it
-		delete[] ciphertext;
+			// We do not need the allocated encryption buffer anymore, as such, free it
+			delete[] ciphertext;
+		}
 	}
 
 	// copy packet bytes except data bytes into the buffer { since there is not any message }
@@ -479,10 +486,8 @@ unsigned int prepare_final_message(Packet* packet, const std::string& message, s
 	*bp++ = 0;
 
 	// define a holder for checksum
-	unsigned int checksum = 0;
-
 	// calculate checksum of Header + body_data
-	checksum = (message.size() > 0) ? 
+	unsigned int checksum = (enc != nullptr) ? 
 		checksum_calculation(buffer_pointer.get(), sizeof(Header) + ciphertext_len) : 
 		checksum_calculation(buffer_pointer.get(), sizeof(Header) + message.size());
 
@@ -496,13 +501,12 @@ unsigned int prepare_final_message(Packet* packet, const std::string& message, s
 	std::memcpy(bp, &(packet->end_magic_number), sizeof(unsigned int));
 
 	// return the packet_size to the caller
-	return sizeof(Header) + ciphertext_len + 1 + sizeof(packet->checksum) + sizeof(packet->end_magic_number); //packet_size;
+	return sizeof(Header) + ((enc == nullptr) ? message.size() : ciphertext_len)+ 1 + sizeof(packet->checksum) + sizeof(packet->end_magic_number); //packet_size;
 }
 
-//********************************************************************************************************************************************************
 // Gets a Packet, a message char* buffer, a buffer pointer, and the size of the buffer pointer to be filled up
 // It goes byte-by-byte to copy header, actual message data, checksum, and end_magic_number of the packet into the buffer pointer
-unsigned int prepare_final_message(Packet* packet, char* message, unsigned long long message_size, std::unique_ptr<char[]>& buffer_pointer)
+unsigned int prepare_final_message(Packet* packet, char* message, unsigned long long message_size, std::unique_ptr<char[]>& buffer_pointer, Encryption* enc)
 {
 	// define a holder to keep track of the encrypted len
 	int ciphertext_len = 0;
@@ -510,7 +514,7 @@ unsigned int prepare_final_message(Packet* packet, char* message, unsigned long 
 	// set the packet size
 	unsigned int packet_size = message_size + sizeof(packet->header)
 		+ sizeof(packet->checksum)
-		+ sizeof(packet->end_magic_number) + 1 + 32;
+		+ sizeof(packet->end_magic_number) + 1 + ((enc == nullptr) ? 0: 32);	
 
 	// allocate buffer_pointer
 	buffer_pointer = std::make_unique<char[]>(packet_size);
@@ -518,48 +522,76 @@ unsigned int prepare_final_message(Packet* packet, char* message, unsigned long 
 	// define a raw pointer indexer
 	char* bp = reinterpret_cast<char*>(buffer_pointer.get());
 
-	// Allocate buffer for encrypted message
-	unsigned char* ciphertext = new unsigned char[ message_size + 32 ];
-
-	// Encrypt the message
-	ciphertext_len = encryption->encrypt(reinterpret_cast<unsigned char*>(message), message_size, ciphertext);
-
-	// Check out the validity
-	if (ciphertext_len == -1)
+	// copy the message's bytes into the buffer { if there is any message }
+	if (message_size > 0) 
 	{
-		// report message			
-		LOG("prepare_final_message :: decryption failed");
+		// Allocate buffer for encrypted message
+		unsigned char* ciphertext = new unsigned char[ message_size + 32 ];
 
-		// We do not need the allocated encryption buffer anymore, as such, free it
-		delete[] ciphertext;
+		// Encrypt the message
+		if (enc != nullptr)
+			ciphertext_len = enc->encrypt((unsigned char*)message, message_size, ciphertext);
 
-		// return error value
-		return static_cast<unsigned int>(~0);
+		// Check out the validity
+		if (ciphertext_len == -1)
+		{
+			// report message			
+			LOG("prepare_final_message :: decryption failed");
+
+			// We do not need the allocated encryption buffer anymore, as such, free it
+			delete[] ciphertext;
+
+			return static_cast<unsigned int>(~0);
+		}
+
+		// Update header's SizeBody, because the message has been encrypted
+		packet->header.SizeBody = (enc == nullptr) ? message_size : ciphertext_len;
+
+		// copy header field of the packet into the buffer
+		memcpy(bp, &(packet->header), sizeof(Header));
+
+		// increment the indexer
+		bp += sizeof(Header);
+
+		// Copy the encrypted message into buffer
+		if (enc == nullptr)
+		{
+			std::memcpy(bp, message, message_size);
+			bp += message_size;
+		}
+		else
+		{
+			std::memcpy(bp, ciphertext, ciphertext_len);
+
+			// increment the indexer again		
+			bp += ciphertext_len;
+
+			// We do not need the allocated encryption buffer anymore, as such, free it
+			delete[] ciphertext;
+		}
 	}
 
-	// Update header's SizeBody, because the message has been encrypted
-	packet->header.SizeBody = ciphertext_len;
+	// copy packet bytes except data bytes into the buffer { since there is not any message }
+	else 
+	{
+		// copy header field of the packet into the buffer
+		std::memcpy(bp, &(packet->header), sizeof(Header));
 
-	// copy header field of the packet into the buffer
-	std::memcpy(bp, &(packet->header), sizeof(Header));
-
-	// increment the indexer
-	bp += sizeof(Header);
-
-	// copy the message's bytes into the buffer	
-	std::memcpy(bp, ciphertext, ciphertext_len); //memcpy(bp, message, message_size);
-
-	// increment the indexer again	
-	bp += ciphertext_len; //bp += message_size;
+		// increment the indexer
+		bp += sizeof(Header);
+	}
 
 	// null terminate the message and increment the indexer
 	*bp++ = 0;
 
+	// define a holder for checksum
 	// calculate checksum of Header + body_data
-	unsigned int checksum = checksum_calculation(buffer_pointer.get(), sizeof(Header) + ciphertext_len);
+	unsigned int checksum = (enc != nullptr) ? 
+		checksum_calculation(buffer_pointer.get(), sizeof(Header) + ciphertext_len) : 
+		checksum_calculation(buffer_pointer.get(), sizeof(Header) + message_size);
 
 	// copy the checksum into the buffer
-	std::memcpy(bp, &checksum, sizeof(unsigned int));
+	std::memcpy(bp, &checksum, sizeof(unsigned int));	
 
 	// increment the indexer again
 	bp += sizeof(unsigned int);
@@ -567,18 +599,13 @@ unsigned int prepare_final_message(Packet* packet, char* message, unsigned long 
 	// copy the end_magic_number field into the buffer
 	std::memcpy(bp, &(packet->end_magic_number), sizeof(unsigned int));
 
-	// We do not need the allocated encryption buffer anymore, as such, free it
-	delete[] ciphertext;
-
 	// return the packet_size to the caller
-	return sizeof(Header) + ciphertext_len + 1 + sizeof(packet->checksum) + sizeof(packet->end_magic_number); //packet_size;
+	return sizeof(Header) + ((enc == nullptr) ? message_size : ciphertext_len) + 1 + sizeof(packet->checksum) + sizeof(packet->end_magic_number); //packet_size;
 }
 
-//********************************************************************************************************************************************************
 // { LINUX specific } Reads a Packet from socket.
 // This function is two-sided, meaning both client and server will call it
 // and each of them are responsible to free the allocated memory durng this call
-
 #ifdef __linux__
 void read_a_packet_from_socket(Packet* packet, bool& connection_failed, int socket)
 {
@@ -596,7 +623,7 @@ void read_a_packet_from_socket(Packet* packet, bool& connection_failed, int sock
 
 	// read bytes from TCP
 	status = ::read(socket, offset + status, remained);
-
+	
 	// Check out status. We have to read some bytes
 	if (status <= 0)
 	{
@@ -871,13 +898,9 @@ void read_a_packet_from_socket(Packet* packet, bool& connection_failed, int sock
 	return;
 }
 #endif
-//********************************************************************************************************************************************************
-// { WINDOWS specific } Reads a Packet from socket.
-// This function is two-sided, meaning both client and server will call it and each of them are responsible to free the allocated memory durng this call
-// *** TCP RECEIVING DATA IS NOT INSTANT AND IT HAS TO QUERY UNTIL THERE IS NO DATA INSIDE TRANSMISSION PORT ***
 
-#if defined(_WIN32) && !defined(__LLVM__)
-void read_a_packet_from_socket(MESBAH::Tcp* tcp, Packet* packet)
+#ifdef _WIN32
+void win_read_a_packet_from_socket(MESBAH::Tcp* tcp, Packet* packet)
 {
 	// define a holder to receive the bytes read
 	int rec = 0;

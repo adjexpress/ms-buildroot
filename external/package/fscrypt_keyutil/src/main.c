@@ -67,6 +67,7 @@ int setup_v1_encryption_key(struct fscrypt_policy_v1* p , char* key){
     v1_key.size = FSCRYPT_MAX_KEY_SIZE;
     memcpy(v1_key.raw, key, FSCRYPT_MAX_KEY_SIZE);
     char* desc= bytes_to_hex(p->master_key_descriptor,FSCRYPT_KEY_DESCRIPTOR_SIZE);
+    printf("FSCRYPT_KEY_DESCRIPTOR_SIZE: %s\n",desc);
 
     char *fscrypt_str = "fscrypt:";
     char *f2fs_str = "f2fs:";
@@ -92,7 +93,7 @@ int setup_v1_encryption_key(struct fscrypt_policy_v1* p , char* key){
  *
 */
 
-int setup_v2_encryption_key(struct fscrypt_policy_v2* p , char* key, int* fd){
+int setup_v2_encryption_key(struct fscrypt_policy_v2* p , char* key, int fd){
 
     // Step 1: Create provisioning key from given Key
     // Step 2: Add provisioning key to kernel KeyRing and get KEY_ID
@@ -115,6 +116,7 @@ int setup_v2_encryption_key(struct fscrypt_policy_v2* p , char* key, int* fd){
     memcpy(payload->raw, key, FSCRYPT_MAX_KEY_SIZE);
 
     char* id_hex = bytes_to_hex(p->master_key_identifier,FSCRYPT_KEY_IDENTIFIER_SIZE);
+    //printf("FSCRYPT_KEY_IDENTIFIER: %s\n",id_hex);
 
     key_serial_t fscrypt_provisioning_key_id = add_key("fscrypt-provisioning", id_hex,
                                                        payload, sizeof(*payload)+FSCRYPT_MAX_KEY_SIZE, KEY_SPEC_SESSION_KEYRING);
@@ -131,12 +133,12 @@ int setup_v2_encryption_key(struct fscrypt_policy_v2* p , char* key, int* fd){
     arg.key_id = fscrypt_provisioning_key_id;
 
     // Perform the ioctl
-    if (ioctl(*fd, FS_IOC_ADD_ENCRYPTION_KEY, &arg) != 0) {
+    if (ioctl(fd, FS_IOC_ADD_ENCRYPTION_KEY, &arg) != 0) {
         perror("FS_IOC_ADD_ENCRYPTION_KEY failed");
         // close(*fd);
         return 1;
     }
-
+    return 0;
 }
 
 
@@ -198,8 +200,8 @@ int main(int argc, char* argv[]) {
 
 
     if(ioctl(fd,FS_IOC_GET_ENCRYPTION_POLICY_EX,&policy_arg) != 0){
-        perror("ioctl FS_IOC_GET_ENCRYPTION_POLICY_EX failed");
-        printf("error: getting file/directory policy failed");
+        perror("ioctl FS_IOC_GET_ENCRYPTION_POLICY_EX failed\n");
+        printf("error: getting file/directory policy failed\n");
         close(fd);
         return 1;
     }
@@ -215,25 +217,28 @@ int main(int argc, char* argv[]) {
     memset(master_key,0,FSCRYPT_MAX_KEY_SIZE);
     str2hex(key,master_key);
 
+    //printf("policy version: %d\n",policy_arg.policy.version);
+
     int ret=0;
     switch (policy_arg.policy.version) {
     case 0:
-        ret = setup_v1_encryption_key(&policy_arg.policy.v1,key);
+        ret = setup_v1_encryption_key(&policy_arg.policy.v1,master_key);
         break;
     case 2:
-        ret = setup_v2_encryption_key(&policy_arg.policy.v2,key,&fd);
+        ret = setup_v2_encryption_key(&policy_arg.policy.v2,master_key,fd);
         break;
     default:
-        printf("unsupported policy version");
-        return 1;
+        printf("unsupported policy version\n");
+        ret=1;
         // break;
     }
 
 
     if(ret !=0){
-        printf("Adding Encryption key to kernel keyring: failed\n");
+        printf("Adding Encryption key to kernel keyring: failed, ret: %d\n",ret);
+    }else {
+        printf("Adding Encryption key to kernel keyring: successful \n");
     }
-    printf("Adding Encryption key to kernel keyring: successful \n");
     close(fd);
     return ret;
 

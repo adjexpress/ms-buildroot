@@ -1,0 +1,15 @@
+config BR2_PACKAGE_PYTHON_MTKCLIENT
+	bool "python-mtkclient"
+	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_PYTHON_PYUSB
+	select BR2_PACKAGE_PYTHON_FUSEPY
+	select BR2_PACKAGE_PYTHON_PYCRYPTODOMEX
+	select BR2_PACKAGE_PYTHON_COLORAMA
+	select BR2_PACKAGE_PYTHON_MOCK
+	select BR2_PACKAGE_PYTHON_PYSERIAL
+	select BR2_PACKAGE_PYTHON_CRYPTODOME
+	select BR2_PACKAGE_PYTHON_CAPSTONE
+	help
+	  fusepy is a Python module that provides a simple interface to FUSE and MacFUSE. It’s just one file and is implemented using ctypes.
+
+	  http://github.com/fusepy/fusepy

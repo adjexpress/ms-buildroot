@@ -33,7 +33,7 @@
 # 
 # 			E.g. to remove the Windows Vista style option, add the option
 # 			-no-feature-style_windowsvista.
-
+		source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/python3-pkg/python-mtkclient/Config.in"
 		source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/python3-pkg/python-capstone/Config.in"
 		source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/python3-pkg/python-fusepy/Config.in"
 		source "$BR2_EXTERNAL_mesbah_qemu_PATH/package/python3-pkg/python-keystone-engine/Config.in"

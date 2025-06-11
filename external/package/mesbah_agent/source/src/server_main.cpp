@@ -1,7 +1,9 @@
 #ifdef __linux__ 
 #		include "../include/Server.h"
+#		include "../include/Encryption.h"
 #elif defined _WIN32
 #		include "Server.h"
+#		include "Encryption.h"
 #endif
 
 #include <stdlib.h>
@@ -11,7 +13,6 @@ Encryption* encryption {nullptr};
 
 int main()
 {
-    std::cout<<"Server Started"<<std::endl;
 	//server_output_log.open("server_output_log.txt", std::ios::binary | std::ios::out);
 	
 	// A 256 bit key
@@ -29,15 +30,11 @@ int main()
 		0x69, 0x63, 0x65, 0x20, 0x64, 0x61, 0x79, 0x2E
 	};
 
-	encryption = new Encryption{ key, iv };
+	Encryption encryption = { key, iv };
 
 	int status = 0;
 
-	// string mode_string = argv[1];
-	// StreamMode sm      = (mode_string == string("TCP")) ? TCP : UDP;
-	// unsigned int port  = atoi(argv[2]);
-
-	Server server(TCP, 64000);
+	Server server(TCP, 64000, &encryption);
 
 	if ((status = server.CreateSocket()) < 0)
 		return ~0;
@@ -50,11 +47,7 @@ int main()
 
 	server.InfiniteAccept();
 
-	//server.Accept();
-
 	server.ShutDown();
-
-	delete encryption;
 
 	return 0;
 }

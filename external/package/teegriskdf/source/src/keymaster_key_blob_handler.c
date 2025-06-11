@@ -21,6 +21,18 @@ Uint8_t* read_keymaster_key_blob_file(const char* keymaster_key_blob_address, Ui
     Uint8_t* kkb_buffer = Alloc(*kkb_size, 0);
     fread(kkb_buffer, *kkb_size, 1, kkb);
     fclose(kkb);
+
+    Uint8_t km_blob_prefix[] = {'p', 'K', 'M', 'b', 'l', 'o', 'b', 0x00 };
+    if (slugish_compare(kkb_buffer, km_blob_prefix, 8))
+    {
+        Uint8_t* tmp_buffer = Alloc(*kkb_size - 8, 0);
+        memcpy(tmp_buffer, &kkb_buffer[8], *kkb_size - 8);
+        memset(kkb_buffer, 0, *kkb_size);
+        memcpy(kkb_buffer, tmp_buffer, *kkb_size - 8);
+        *kkb_size = *kkb_size - 8;
+        safe_free(tmp_buffer);
+    }
+
     return kkb_buffer;
 }
 

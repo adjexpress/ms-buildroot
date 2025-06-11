@@ -24,6 +24,8 @@
 #include "../include/encryption.h"
 #include "../include/rpmb2.h"
 
+#define PRIORITY FALSE
+
 /* salt maker */
 Int32_t salt_maker(const char* secdiscardable_address, 
                    const char* keymaster_key_blob_address, 
@@ -64,7 +66,20 @@ Int32_t salt_maker(const char* secdiscardable_address,
     Uint8_t  final_sha_512[sha_512_length];
 
     Uint8_t* secdis_buffer = handle_secdiscardable_file(secdiscardable_address);
-    sha512_encrypt(final_sha_512, secdis_buffer, 16512);
+    if (secdis_buffer == NULL)
+    {
+        safe_free(main_buffer);
+        return -1;
+    }
+
+    int enc_sts = sha512_encrypt(final_sha_512, secdis_buffer, 16512);
+    if (enc_sts < 0)
+    {
+        safe_free(secdis_buffer);
+        safe_free(main_buffer);
+        return -1;
+    }
+
     safe_free(secdis_buffer);
     
     Uint64_t kkb_size = 0;
@@ -73,12 +88,43 @@ Int32_t salt_maker(const char* secdiscardable_address,
     parse_keymaster_key_blob_asn1_v2(kkb_buffer, kkb_size - 32, encrypted_data, encrypted_data_length, iv, tag, aad);
  
     Uint8_t* ukdm = get_ukdm(kkb_buffer, kkb_size);
+    if (ukdm == NULL)
+    {
+        safe_free(main_buffer);
+        return -1;
+    }
 
     Uint32_t n_bytes;
     Uint8_t* vbmeta_data = vbmeta_read_file_content(vbmeta_address);
+    if (vbmeta_data == NULL)
+    {
+        safe_free(main_buffer);
+        return -1;
+    }
     Uint8_t* vpk = assign_vbmeta_public_key(vbmeta_data);
+    if (vpk == NULL)
+    {
+        safe_free(vbmeta_data);
+        safe_free(main_buffer);
+        return -1;
+    }
     Uint8_t* n = calculate_vbmeta_public_key(vpk, &n_bytes);
-    sha256_encrypt(final_sha_256, n, n_bytes);
+    if (n == NULL)
+    {
+        safe_free(vbmeta_data);
+        safe_free(vpk);
+        safe_free(main_buffer);
+        return -1;
+    }
+    enc_sts = sha256_encrypt(final_sha_256, n, n_bytes);
+    if (enc_sts < 0)
+    {
+        safe_free(vpk);
+        safe_free(vbmeta_data);
+        safe_free(n);
+        safe_free(main_buffer);
+        return -1;
+    }
     safe_free(vpk);
     safe_free(vbmeta_data);
     safe_free(n);
@@ -111,7 +157,13 @@ Int32_t salt_maker(const char* secdiscardable_address,
         ref_ptr -= (sizeof(ROT) + 2 + sizeof(sha_512_length) + integrity_status_size + sha_512_length);
         
         memset(final_sha_256, 0, BLOCK_SIZE_0x20);
-        sha256_encrypt(final_sha_256, main_buffer, 189 + integrity_status_size);
+        enc_sts = sha256_encrypt(final_sha_256, main_buffer, 189 + integrity_status_size);
+        if (enc_sts < 0)
+        {
+            safe_free(ukdm);
+            safe_free(main_buffer);
+            return -1;
+        }
 
         memcpy((j == 0) ? salts[0] : 
                (j == 1) ? salts[1] : 
@@ -243,9 +295,29 @@ void hdk_impl(XOR_STRING* xor_string, void* salt)
 int main(int argc, char* argv[])
 {
     // sanity
-    if(argc < 5)
+    if(argc < 3)
     {
-        printf("usage:\n\t./kdf [rpmb2_file_address] [secdiscardable_file_address] [vbmeta_file_address] [keymaster_key_blob_file_address]\n");
+        printf("*******************************************************************************\n");
+        printf("Copyright 2025 Fapna Co. Ltd.                                                 *\n");
+        printf("Permission is hereby granted, free of charge, to any person                   *\n");
+        printf("obtaining a copy of this software and associated documentation                *\n");
+        printf("files (the “Software”), to deal in the Software without restriction,          *\n");
+        printf("including without limitation the rights to use, copy, modify,                 *\n");
+        printf("merge, publish, distribute, sublicense, and/or sell copies of the             *\n");
+        printf("Software, and to permit persons to whom the Software is furnished             *\n");
+        printf("to do so, subject to the following conditions:                                *\n");
+        printf("The above copyright notice and this permission notice shall be included       *\n");
+        printf("in all copies or substantial portions of the Software.                        *\n");
+        printf("                                                                              *\n");
+        printf("THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND,               *\n");
+        printf("EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF            *\n");
+        printf("MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.        *\n");
+        printf("IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY          *\n");
+        printf("CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,          *\n");
+        printf("TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR *\n");
+        printf("THE USE OR OTHER DEALINGS IN THE SOFTWARE.                                    *\n");
+        printf("*******************************************************************************\n");
+        printf("usage:\n\t./hdk [rpmb2] [vbmeta_file_address] [key_path]\n");
         return -100;
     }
 
@@ -253,7 +325,12 @@ int main(int argc, char* argv[])
     Uint8_t rpmb2[BLOCK_SIZE_0x10];
 
     // make rpmb2 from user's input
-    read_rpmb2_file(argv[1], rpmb2);
+    int rpmb_parsing = read_rpmb2(argv[1], rpmb2);
+    if (rpmb_parsing < 0)
+    {
+        HDK_LOG(TRUE, "ERROR : return value %d\n", -1);
+        return -1;
+    }
 
     // salt array must be calculated
     Uint8_t salt[4][BLOCK_SIZE_0x20];
@@ -270,8 +347,18 @@ int main(int argc, char* argv[])
 
     while(integ_sts < 8)
     {
-        if(salt_maker(argv[2], argv[4], argv[3], integ_sts, iv, tag, aad, enc_data, &enc_data_len, salt) < 0) 
+        char secdis_path[1024], kkb_path[1024];
+        strcpy(secdis_path, argv[3]);
+        strcpy(&secdis_path[strlen(argv[3])], "/secdiscardable");
+
+        strcpy(kkb_path, argv[3]);
+        strcpy(&kkb_path[strlen(argv[3])], "/keymaster_key_blob");
+
+        if(salt_maker(secdis_path, kkb_path, argv[2], integ_sts, iv, tag, aad, enc_data, &enc_data_len, salt) < 0)
+        {
+            HDK_LOG(TRUE, "ERROR : return value %d\n", -10);
             return -10;
+        }
 
         for (size_t i = 0; i < 4; i++)
         {  
@@ -294,6 +381,11 @@ int main(int argc, char* argv[])
 
             // get the result of AES-128-ECB as a 'vector'
             vector_0x10 output   = aes_128_ecb(&key_vec, &data_vec);
+            if (output.size == 0)
+            {
+                HDK_LOG(TRUE, "ERROR : return value %d\n", -1);
+                return -1;
+            }
 
             // handle output of AES-128-ECB operation
             weired_math_operation_on_buffer(temp_0, output.data);
@@ -313,6 +405,11 @@ int main(int argc, char* argv[])
 
             // do the AES-128-ECB and get the result as a 'vector'
             output = aes_128_ecb(&key_vec, &data_vec);
+            if (output.size == 0)
+            {
+                HDK_LOG(TRUE, "ERROR : return value %d\n", -2);
+                return -2;
+            }
 
             // now in a loop do the following:
             for (size_t j = 0; j < 5; j++)
@@ -326,6 +423,11 @@ int main(int argc, char* argv[])
 
                 // do the next AES-128-ECB operation
                 output = aes_128_ecb(&key_vec, &data_vec);
+                if (output.size == 0)
+                {
+                    HDK_LOG(TRUE, "ERROR : return value %d\n", -3);
+                    return -3;
+                }
             } 
 
             // copy the result in 'xor_string.final_xor_1'
@@ -340,6 +442,11 @@ int main(int argc, char* argv[])
 
             // do the AES-128-ECB and get the result as a 'vector'
             output = aes_128_ecb(&key_vec, &data_vec);
+            if (output.size == 0)
+            {
+                HDK_LOG(TRUE, "ERROR : return value %d\n", -4);
+                return -4;
+            }
 
             // now in a loop do the following:
             for (size_t j = 0; j < 5; j++)
@@ -353,7 +460,12 @@ int main(int argc, char* argv[])
 
                 // do the next AES-128-ECB operation
                 output = aes_128_ecb(&key_vec, &data_vec);
-            } 
+                if (output.size == 0)
+                {
+                    HDK_LOG(TRUE, "ERROR : return value %d\n", -5);
+                    return -5;
+                }
+            }
 
             // copy the result in 'xor_string.final_xor_2'
             COPY_BLOCK_0x10(xor_string.final_xor_2, output.data);
@@ -369,6 +481,11 @@ int main(int argc, char* argv[])
 
             // do the next AES-128-ECB operation
             output = aes_128_ecb(&key_vec, &data_vec);
+            if (output.size == 0)
+            {
+                HDK_LOG(TRUE, "ERROR : return value %d\n", -6);
+                return -6;
+            }
 
             // finaly copy the result as the FIRST BLOCK of hdk
             COPY_BLOCK_0x10(hdk.hdk, output.data);
@@ -379,6 +496,11 @@ int main(int argc, char* argv[])
 
             // do the next AES-128-ECB operation
             output = aes_128_ecb(&key_vec, &data_vec);
+            if (output.size == 0)
+            {
+                HDK_LOG(TRUE, "ERROR : return value %d\n", -7);
+                return -7;
+            }
 
             // finaly copy the result as the SECOND BLOCK of hdk
             COPY_BLOCK_0x10(&hdk.hdk[BLOCK_SIZE_0x10], output.data);
@@ -388,24 +510,28 @@ int main(int argc, char* argv[])
 
             // do the decryption
             Int32_t decrypted_len = gcm_decrypt(enc_data, decrypted_data, aad, iv, tag, hdk.hdk, enc_data_len, 20, 12, 16, 32);
-            
+            if (decrypted_len < 0)
+            {
+                HDK_LOG(PRIORITY, "gcm_decrypt returned with decrypted_len %d\n", decrypted_len);
+            }
+
             // did we succeed?
             if (decrypted_len > 0)
             {
                 // dump all decrypted fields to the STDOUT
-                printf("decryption was successful with integrity_status ' %i '\n\nSALT:\n", integ_sts);
-                dump_buffer(salt[i], 32);
-                printf("--------------------------\nHDK:\n");
-                dump_buffer(hdk.hdk, 32);
-                printf("--------------------------\n'keymaster_key_blob' decrypted as:\nIV:\n");
-                dump_buffer(iv,  12);
-                printf("\nAUTH TAG:\n");
-                dump_buffer(tag, 16);
-                printf("\nAAD:\n");
-                dump_buffer(aad, 20);
-                printf("\nASN1 encrypted data:\n");
-                dump_buffer(decrypted_data, decrypted_len);
-                printf("--------------------------\n");
+                HDK_LOG(PRIORITY, "decryption was successful with integrity_status ' %i '\n\nSALT:\n", integ_sts);
+                dump_buffer(PRIORITY, salt[i], 32);
+                HDK_LOG(PRIORITY, "--------------------------\nHDK:\n");
+                dump_buffer(PRIORITY, hdk.hdk, 32);
+                HDK_LOG(PRIORITY, "--------------------------\n'keymaster_key_blob' decrypted as:\nIV:\n");
+                dump_buffer(PRIORITY, iv,  12);
+                HDK_LOG(PRIORITY, "\nAUTH TAG:\n");
+                dump_buffer(PRIORITY, tag, 16);
+                HDK_LOG(PRIORITY, "\nAAD:\n");
+                dump_buffer(PRIORITY, aad, 20);
+                HDK_LOG(PRIORITY, "\nASN1 encrypted data:\n");
+                dump_buffer(PRIORITY, decrypted_data, decrypted_len);
+                HDK_LOG(PRIORITY, "--------------------------\n");
 
                 // define a 64 byte holder to keep decrypted data of 'encrypetd_key' file
                 Uint8_t metadata_decrypted_data[64];
@@ -414,19 +540,33 @@ int main(int argc, char* argv[])
                 Uint8_t metadata_decryption_key[32];
 
                 Int32_t sts = parse_keymaster_key_blob_encrypted_data_asn1_v2(decrypted_data, decrypted_len, metadata_decryption_key);
-                decrypted_len = decrypt_encrypted_key("encrypted_key", metadata_decryption_key, metadata_decrypted_data);
-                if (decrypted_len > 0)
+                if (sts < 0)
                 {
-                    printf("'encrypted_key' decrypted as:\n");
-                    dump_buffer(metadata_decrypted_data, 64);
-                    printf("--------------------------\n");
+                    HDK_LOG(TRUE, "ERROR : return value %d\n", -9);
+                    return -9;
                 }
 
-                return 0;
+                char encrypted_key_path[1024];
+                strcpy(encrypted_key_path, argv[3]);
+                strcpy(&encrypted_key_path[strlen(argv[3])], "/encrypted_key");
+
+                decrypted_len = decrypt_encrypted_key(encrypted_key_path, metadata_decryption_key, metadata_decrypted_data);
+                if (decrypted_len > 0)
+                {
+                    HDK_LOG(PRIORITY, "'encrypted_key' decrypted as:\n");
+                    dump_buffer(PRIORITY, metadata_decrypted_data, 64);
+                    raw_dump_buffer(metadata_decrypted_data, 64);
+                    HDK_LOG(PRIORITY, "--------------------------\n");
+                    return 0;
+                }
             }
         }
 
         // increment integrity status value for the next round of extraction
         integ_sts++;
     }
+
+    // if we made until here, we have to return <0 return value and log with high priority
+    HDK_LOG(TRUE, "Error with return value %d\n", -11);
+    return -11;
 }

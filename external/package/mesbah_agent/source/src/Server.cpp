@@ -1,5 +1,7 @@
 #ifdef __linux__
 #		include "../include/Server.h"
+#		include <string>
+#		include <vector>
 #elif defined _WIN32
 #		include "Server.h"
 #endif
@@ -78,14 +80,15 @@ static inline unsigned int unwrap_index(const Wrapped_Index& wi)
 }
 
 // Server CTOR
-Server::Server(StreamMode sm, unsigned int port_number)
+Server::Server(StreamMode sm, unsigned int port_number, Encryption* encryption)
 	:
 	sm_              { sm },
 	port_number_     { port_number },
 	server_          { 0 },
 	serv_addr_       {  },
 	internal_packet_ { nullptr },
-	file_attributes_ { nullptr }
+	file_attributes_ { nullptr },
+	enc              { encryption }
 {
 }
 
@@ -119,13 +122,7 @@ int Server::CreateSocket()
 		LOG("setsockopt failed");
 		return -1;
 	}*/
-	opt = 1;
-	status = ::setsockopt(this->server_, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
-	if (status)
-	{
-		LOG("setsockopt failed");
-		return -1;
-	}
+	
 	opt = 1;
 	status = ::setsockopt(this->server_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 	if (status)
@@ -257,7 +254,7 @@ void Server::Accept()
 		delete internal_packet_;
 
 		// send error to the client
-		set_error_packet(new_socket, internal_packet_, CHECKSUM_ERROR);
+		set_error_packet(new_socket, internal_packet_, CHECKSUM_ERROR, this->enc);
 
 		// return to the caller
 		return;
@@ -279,30 +276,33 @@ void Server::Accept()
 	// Decrypt the cipher text message (body)
 	if (internal_packet_->header.SizeBody)
 	{
-		// do the decryption and retrieve the size
-		decryptedtext_len = encryption->decrypt(reinterpret_cast<unsigned char*>(internal_packet_->body), internal_packet_->header.SizeBody, decryptedtext.get());
-
-		// Check out the validity
-		if (decryptedtext_len == -1)
+		if (this->enc != nullptr)
 		{
-			// report message			
-			LOG("decryption failed");
-
-			// Is it the KILL_SERVER packet? If, so completely return
-			if (internal_packet_->header.Type == TERMINATE_SERVER || internal_packet_->header.Type == EXIT_SERVER || internal_packet_->header.Type == KILL_SERVER)
-				breaking_server_connection = true;
-
-			// clean up the allocated body
-			delete[] internal_packet_->body;
-
-			// clean up the internal_packet_ for the next communication
-			delete internal_packet_;
-
-			// send error to the client
-			set_error_packet(new_socket, internal_packet_, ENCRYPT_DECRYPT_ERROR);
-
-			// return to the caller
-			return;			
+			// do the decryption and retrieve the size
+			decryptedtext_len = this->enc->decrypt(reinterpret_cast<unsigned char*>(internal_packet_->body), internal_packet_->header.SizeBody, decryptedtext.get());
+			
+			// Check out the validity
+			if (decryptedtext_len == -1)
+			{
+				// report message			
+				LOG("decryption failed");
+			
+				// Is it the KILL_SERVER packet? If, so completely return
+				if (internal_packet_->header.Type == TERMINATE_SERVER || internal_packet_->header.Type == EXIT_SERVER || 	internal_packet_->header.Type == KILL_SERVER)
+					breaking_server_connection = true;
+			
+				// clean up the allocated body
+				delete[] internal_packet_->body;
+			
+				// clean up the internal_packet_ for the next communication
+				delete internal_packet_;
+			
+				// send error to the client
+				set_error_packet(new_socket, internal_packet_, ENCRYPT_DECRYPT_ERROR, this->enc);
+			
+				// return to the caller
+				return;			
+			}
 		}
 	}
 
@@ -315,7 +315,8 @@ void Server::Accept()
 			std::string phone_executed_message = "";
 
 			// get command from the internal_packet_
-			std::string run_shell_status = run_shell(std::string(reinterpret_cast<char*>(decryptedtext.get()))); //std::string run_shell_status = run_shell(string(internal_packet_->body));
+			char* bare_message = (this->enc == nullptr) ? internal_packet_->body : (char*)decryptedtext.get();
+			std::string run_shell_status = run_shell(std::string(bare_message));
 
 			if(run_shell_status.size() == std::string::npos)
 			{
@@ -329,7 +330,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, SHELL_ERROR);
+				set_error_packet(new_socket, internal_packet_, SHELL_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -357,7 +358,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, phone_executed_message, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, phone_executed_message, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -378,7 +379,7 @@ void Server::Accept()
 		case START_SEND_FILE:
 		{
 			// file address
-			std::string file_address = reinterpret_cast<char*>(decryptedtext.get()); //std::string file_address = string(internal_packet_->body);
+			std::string file_address = std::string(internal_packet_->body);
 
 			// file size
 			unsigned long long file_size = internal_packet_->header.TotalFileSize;
@@ -410,7 +411,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -439,7 +440,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, INTERNAL_BUFFER_ERROR);
+				set_error_packet(new_socket, internal_packet_, INTERNAL_BUFFER_ERROR, this->enc);
 
 				// return to the caller
 				return;
@@ -451,7 +452,7 @@ void Server::Accept()
 				if (this->file_attributes_->file_descriptor_ == ~0)
 				{
 					// file address
-					std::string file_address = reinterpret_cast<char*>(decryptedtext.get()); //std::string file_address = string(internal_packet_->body);
+					std::string file_address = std::string(internal_packet_->body);
 
 					// open file
 					int fd = open(file_address.c_str(), O_CREAT | O_RDWR | O_APPEND | O_NONBLOCK, S_IRWXU);
@@ -476,7 +477,7 @@ void Server::Accept()
 										( errno == EOVERFLOW ) ? START_SEND_FILE_PACKET_VOLUME_SPACE_ERROR : INTERNAL_BUFFER_ERROR;
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, error_type);
+						set_error_packet(new_socket, internal_packet_, error_type, this->enc);
 
 						// terminate
 						return;
@@ -504,7 +505,7 @@ void Server::Accept()
 					std::unique_ptr<char[]> final_message {nullptr};
 
 					// prepare the final message
-					unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message);
+					unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message, this->enc);
 
 					// send the server's prepared_message to the client
 					::send(new_socket, final_message.get(), packet_size, 0);
@@ -523,10 +524,10 @@ void Server::Accept()
 				}				
 
 				// write data into the file
-				ssize_t bytes_written = write(this->file_attributes_->file_descriptor_, decryptedtext.get(), decryptedtext_len);
+				ssize_t bytes_written = write(this->file_attributes_->file_descriptor_, internal_packet_->body, internal_packet_->header.SizeBody);
 
 				// was writing successful?
-				if (bytes_written != decryptedtext_len)
+				if (bytes_written != internal_packet_->header.SizeBody)
 				{
 					LOG("DATA_SEND_FILE :: Error: write to file failed");
 
@@ -545,7 +546,7 @@ void Server::Accept()
 						LOG("DATA_SEND_FILE :: Error: closing the file descriptor failed");
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_CLOSE_FILE_ERROR);
+						set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 					}
 
 					// clean up the file_descriptor_ internal object
@@ -555,14 +556,14 @@ void Server::Accept()
 					this->file_attributes_ = nullptr;
 					
 					// send error to the client
-					set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_WRITE_FILE_ERROR);
+					set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_WRITE_FILE_ERROR, this->enc);
 
 					// return to the caller
 					return;
 				}
 
 				// update the number of bytes already written by this packet
-				this->file_attributes_->bytes_handeled_ += decryptedtext_len;
+				this->file_attributes_->bytes_handeled_ += internal_packet_->header.SizeBody;
 
 				// if written bytes, exceeds the demanded file size, send an error and terminate the flow of the communication
 				if (this->file_attributes_->bytes_handeled_ > this->file_attributes_->file_size_)
@@ -584,7 +585,7 @@ void Server::Accept()
 						LOG("DATA_SEND_FILE :: Error: closing the file descriptor failed");
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_CLOSE_FILE_ERROR);
+						set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 					}
 					
 					// clean up the file_descriptor_ internal object
@@ -594,7 +595,7 @@ void Server::Accept()
 					this->file_attributes_ = nullptr;
 
 					// send error to the client
-					set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_OVERPASSED_BYTES_ERROR);
+					set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_OVERPASSED_BYTES_ERROR, this->enc);
 
 					// return to the caller
 					return;
@@ -620,7 +621,7 @@ void Server::Accept()
 						LOG("DATA_SEND_FILE :: Error: clsoing the file descriptor failed");
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_CLOSE_FILE_ERROR);
+						set_error_packet(new_socket, internal_packet_, DATA_SEND_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 					}
 
 					// clean up the file_descriptor_ internal object
@@ -654,7 +655,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -673,7 +674,7 @@ void Server::Accept()
 		case START_GET_FILE:
 		{
 			// file address
-			std::string file_address = reinterpret_cast<char*>(decryptedtext.get()); //std::string file_address = string(internal_packet_->body);
+			std::string file_address = std::string(internal_packet_->body);
 
 			// open file wih only Read permissions
 			int fd = open(file_address.c_str(), O_RDONLY, S_IRWXU | S_IRWXG | S_IRWXO);
@@ -698,7 +699,7 @@ void Server::Accept()
 								( errno == EOVERFLOW ) ? START_SEND_FILE_PACKET_VOLUME_SPACE_ERROR : INTERNAL_BUFFER_ERROR;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, error_type);
+				set_error_packet(new_socket, internal_packet_, error_type, this->enc);
 
 				// sleep 500 usec
 				usleep(500);
@@ -735,11 +736,11 @@ void Server::Accept()
 						LOG("START_GET_FILE :: Error: closing the file descriptor failed");
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, START_GET_FILE_PACKET_CLOSE_FILE_ERROR);
+						set_error_packet(new_socket, internal_packet_, START_GET_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 					}
 
 					// send error to the client
-					set_error_packet(new_socket, internal_packet_, START_GET_FILE_PACKET_SIZEOF_FILE_ERROR);
+					set_error_packet(new_socket, internal_packet_, START_GET_FILE_PACKET_SIZEOF_FILE_ERROR, this->enc);
 
 					// terminate
 					return;
@@ -779,7 +780,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -811,7 +812,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, INTERNAL_BUFFER_ERROR);
+				set_error_packet(new_socket, internal_packet_, INTERNAL_BUFFER_ERROR, this->enc);
 
 				// sleep 500 usec
 				usleep(500);
@@ -865,7 +866,7 @@ void Server::Accept()
 					char tmp = ' ';
 
 					// prepare the encrypted packet
-					unsigned int packet_size = prepare_final_message(internal_packet_, &tmp, 0, final_message); // <------
+					unsigned int packet_size = prepare_final_message(internal_packet_, &tmp, 0, final_message, this->enc); // <------
 
 					// send it to TCP channel
 					::send(new_socket, final_message.get(), packet_size, 0);
@@ -912,11 +913,11 @@ void Server::Accept()
 							LOG("DATA_GET_FILE :: Error: closing the file descriptor failed");
 
 							// send error to the client
-							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR);
+							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 						}
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_READ_FILE_ERROR);
+						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_READ_FILE_ERROR, this->enc);
 
 						// return to the caller
 						return;
@@ -939,14 +940,14 @@ void Server::Accept()
 							LOG("DATA_GET_FILE :: Error: closing the file descriptor failed");
 
 							// send error to the client
-							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR);
+							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 
 							// return to the caller
 							return;
 						}
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_OVERPASSED_BYTES_ERROR);
+						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_OVERPASSED_BYTES_ERROR, this->enc);
 
 						// return to the caller
 						return;
@@ -966,7 +967,7 @@ void Server::Accept()
 							LOG("DATA_GET_FILE :: Error: closing the file descriptor failed");
 
 							// send error to the client
-							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR);
+							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 
 							// return to the caller
 							return;
@@ -982,7 +983,7 @@ void Server::Accept()
 						std::unique_ptr<char[]> final_message {nullptr};
 
 						// prepare the final message
-						unsigned int packet_size = prepare_final_message(internal_packet_, block_bytes_buffer.get(), FILE_BLOCK, final_message);
+						unsigned int packet_size = prepare_final_message(internal_packet_, block_bytes_buffer.get(), FILE_BLOCK, final_message, this->enc);
 
 						// send the server's prepared_message to the client
 						::send(new_socket, final_message.get(), packet_size, 0);
@@ -1016,7 +1017,7 @@ void Server::Accept()
 						std::unique_ptr<char[]> final_message {nullptr};
 
 						// prepare the final message
-						unsigned int packet_size = prepare_final_message(internal_packet_, block_bytes_buffer.get(), FILE_BLOCK, final_message);
+						unsigned int packet_size = prepare_final_message(internal_packet_, block_bytes_buffer.get(), FILE_BLOCK, final_message, this->enc);
 
 						// send the server's prepared_message to the client
 						::send(new_socket, final_message.get(), packet_size, 0);
@@ -1070,11 +1071,11 @@ void Server::Accept()
 							LOG("DATA_GET_FILE :: Error: closing the file descriptor failed");
 
 							// send error to the client
-							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR);
+							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 						}
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_READ_FILE_ERROR);
+						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_READ_FILE_ERROR, this->enc);
 
 						// return to the caller
 						return;
@@ -1103,11 +1104,11 @@ void Server::Accept()
 							LOG("DATA_GET_FILE :: Error: closing the file descriptor failed");
 
 							// send error to the client
-							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR);
+							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 						}
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_OVERPASSED_BYTES_ERROR);
+						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_OVERPASSED_BYTES_ERROR, this->enc);
 
 						// return to the caller
 						return;
@@ -1127,7 +1128,7 @@ void Server::Accept()
 							LOG("DATA_GET_FILE :: Error: closing the file descriptor failed");
 
 							// send error to the client
-							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR);
+							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 
 							// return to the caller
 							return;
@@ -1154,11 +1155,11 @@ void Server::Accept()
 							LOG("DATA_GET_FILE :: Error: closing the file descriptor failed");
 
 							// send error to the client
-							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR);
+							set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_CLOSE_FILE_ERROR, this->enc);
 						}
 
 						// send error to the client
-						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_INCUFFICIENT_BYTES_ERROR);
+						set_error_packet(new_socket, internal_packet_, DATA_GET_FILE_PACKET_INCUFFICIENT_BYTES_ERROR, this->enc);
 
 						// return to the caller
 						return;
@@ -1171,7 +1172,7 @@ void Server::Accept()
 					std::unique_ptr<char[]> final_message{ nullptr };
 
 					// prepare the final message
-					unsigned int packet_size = prepare_final_message(internal_packet_, remaining_bytes_buffer.get(), remained, final_message);
+					unsigned int packet_size = prepare_final_message(internal_packet_, remaining_bytes_buffer.get(), remained, final_message, this->enc);
 
 					// send the server's prepared_message to the client
 					::send(new_socket, final_message.get(), packet_size, 0);
@@ -1206,7 +1207,7 @@ void Server::Accept()
 			if (directory_search_result == -1)
 			{
 				// throw an error packet
-				set_error_packet(new_socket, this->internal_packet_, GET_DIRECTORIES_PACKET_FILESYSTEM_ERROR);
+				set_error_packet(new_socket, this->internal_packet_, GET_DIRECTORIES_PACKET_FILESYSTEM_ERROR, this->enc);
 
 				// sleep 500 usec
 				usleep(500);
@@ -1236,7 +1237,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -1269,7 +1270,7 @@ void Server::Accept()
 			if (directory_search_result == -1)
 			{
 				// throw an error packet
-				set_error_packet(new_socket, this->internal_packet_, GET_DIRECTORIES_PACKET_FILESYSTEM_ERROR);
+				set_error_packet(new_socket, this->internal_packet_, GET_DIRECTORIES_PACKET_FILESYSTEM_ERROR, this->enc);
 
 				// sleep 500 usec
 				usleep(500);
@@ -1299,7 +1300,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 			
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -1338,7 +1339,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, message, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -1392,7 +1393,7 @@ void Server::Accept()
 								( errno == EOVERFLOW ) ? EXECUTE_PACKET_VOLUME_SPACE_ERROR : INTERNAL_BUFFER_ERROR;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, error_type);
+				set_error_packet(new_socket, internal_packet_, error_type, this->enc);
 
 				// terminate
 				return;
@@ -1414,7 +1415,7 @@ void Server::Accept()
 					delete internal_packet_;
 
 					// send error to the client
-					set_error_packet(new_socket, internal_packet_, EXECUTE_PACKET_CLOSE_FILE_ERROR);
+					set_error_packet(new_socket, internal_packet_, EXECUTE_PACKET_CLOSE_FILE_ERROR, this->enc);
 
 					// terminate
 					return;
@@ -1445,7 +1446,7 @@ void Server::Accept()
 					delete internal_packet_;
 
 					// send error to the client
-					set_error_packet(new_socket, internal_packet_, EXECUTE_PACKET_AUTHENTICATION_ERROR);
+					set_error_packet(new_socket, internal_packet_, EXECUTE_PACKET_AUTHENTICATION_ERROR, this->enc);
 
 					// terminate
 					return;
@@ -1581,7 +1582,7 @@ void Server::Accept()
 				std::unique_ptr<char[]> final_message {nullptr};
 
 				// prepare the final message
-				unsigned int packet_size = prepare_final_message(internal_packet_, wrapped_index_char_buffer.get(), sizeof(Wrapped_Index), final_message);
+				unsigned int packet_size = prepare_final_message(internal_packet_, wrapped_index_char_buffer.get(), sizeof(Wrapped_Index), final_message, this->enc);
 
 				// send the server's prepared_message to the client
 				::send(new_socket, final_message.get(), packet_size, 0);
@@ -1623,7 +1624,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, READ_FROM_STDOUT_PACKET_OUT_OF_RANGE_ERROR);
+				set_error_packet(new_socket, internal_packet_, READ_FROM_STDOUT_PACKET_OUT_OF_RANGE_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -1645,7 +1646,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, READ_FROM_STDOUT_PACKET_PROCESS_IS_DEAD_ERROR);
+				set_error_packet(new_socket, internal_packet_, READ_FROM_STDOUT_PACKET_PROCESS_IS_DEAD_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -1689,7 +1690,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, return_buffer, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, return_buffer, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -1737,7 +1738,7 @@ void Server::Accept()
 					delete internal_packet_;
 
 					// send error to the client
-					set_error_packet(new_socket, internal_packet_, WRITE_TO_STDIN_INVALID_INPUT_FORMAT_ERROR);
+					set_error_packet(new_socket, internal_packet_, WRITE_TO_STDIN_INVALID_INPUT_FORMAT_ERROR, this->enc);
 
 					// terminate
 					return;
@@ -1774,7 +1775,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, WRITE_TO_STDIN_PACKET_OUT_OF_RANGE_ERROR);
+				set_error_packet(new_socket, internal_packet_, WRITE_TO_STDIN_PACKET_OUT_OF_RANGE_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -1796,7 +1797,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, WRITE_TO_STDIN_PACKET_PROCESS_IS_DEAD_ERROR);
+				set_error_packet(new_socket, internal_packet_, WRITE_TO_STDIN_PACKET_PROCESS_IS_DEAD_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -1820,7 +1821,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, INTERNAL_BUFFER_ERROR);
+				set_error_packet(new_socket, internal_packet_, INTERNAL_BUFFER_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -1839,7 +1840,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, ".", final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, ".", final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -1880,7 +1881,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, READ_FROM_STDOUT_PACKET_OUT_OF_RANGE_ERROR);
+				set_error_packet(new_socket, internal_packet_, READ_FROM_STDOUT_PACKET_OUT_OF_RANGE_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -1901,7 +1902,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, READ_FROM_STDOUT_PACKET_PROCESS_IS_DEAD_ERROR);
+				set_error_packet(new_socket, internal_packet_, READ_FROM_STDOUT_PACKET_PROCESS_IS_DEAD_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -1942,7 +1943,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, return_buffer, final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, return_buffer, final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);
@@ -1983,7 +1984,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, TERMINATE_EXECUTION_PACKET_OUT_OF_RANGE_ERROR);
+				set_error_packet(new_socket, internal_packet_, TERMINATE_EXECUTION_PACKET_OUT_OF_RANGE_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -2004,7 +2005,7 @@ void Server::Accept()
 				delete internal_packet_;
 
 				// send error to the client
-				set_error_packet(new_socket, internal_packet_, TERMINATE_EXECUTION_PACKET_PROCESS_IS_DEAD_ERROR);
+				set_error_packet(new_socket, internal_packet_, TERMINATE_EXECUTION_PACKET_PROCESS_IS_DEAD_ERROR, this->enc);
 
 				// terminate
 				return;
@@ -2030,7 +2031,7 @@ void Server::Accept()
 			std::unique_ptr<char[]> final_message {nullptr};
 
 			// prepare the final message
-			unsigned int packet_size = prepare_final_message(internal_packet_, ".", final_message);
+			unsigned int packet_size = prepare_final_message(internal_packet_, ".", final_message, this->enc);
 
 			// send the server's prepared_message to the client
 			::send(new_socket, final_message.get(), packet_size, 0);

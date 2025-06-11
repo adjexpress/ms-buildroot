@@ -1,15 +1,20 @@
 #ifdef __linux__ 
 #		include "../include/Packet.h"
+#		include "../include/Encryption.h"
 #elif defined _WIN32
 #		include "Packet.h"
+#		include "Encryption.h"
 #endif
+
+// Release_logger
+extern std::ofstream ___release_log_object_v4_0___;
 
 Encryption::Encryption(unsigned char* _key, unsigned char* _iv) noexcept
     : key{ _key }, iv{ _iv }
 {}
 
-int Encryption::encrypt(unsigned char *plaintext, int plaintext_len, unsigned char *ciphertext)
- {    
+int Encryption::encrypt(unsigned char* plaintext, int plaintext_len, unsigned char* ciphertext)
+{    
     EVP_CIPHER_CTX* ctx;
 
     int len, ciphertext_len;
@@ -22,12 +27,12 @@ int Encryption::encrypt(unsigned char *plaintext, int plaintext_len, unsigned ch
     }
 
     /*
-     * Initialize the encryption operation. IMPORTANT - ensure you use a key
-     * and IV size appropriate for your cipher
-     * In this example we are using 256 bit AES (i.e. a 256 bit key). The
-     * IV size for *most* modes is the same as the block size. For AES this
-     * is 128 bits
-     */
+    * Initialize the encryption operation. IMPORTANT - ensure you use a key
+    * and IV size appropriate for your cipher
+    * In this example we are using 256 bit AES (i.e. a 256 bit key). The
+    * IV size for *most* modes is the same as the block size. For AES this
+    * is 128 bits
+    */
     if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
     {
         handleErrors();
@@ -75,12 +80,12 @@ int Encryption::decrypt(unsigned char* ciphertext, int ciphertext_len, unsigned 
     }
 
     /*
-     * Initialize the decryption operation. IMPORTANT - ensure you use a key
-     * and IV size appropriate for your cipher
-     * In this example we are using 256 bit AES (i.e. a 256 bit key). The
-     * IV size for *most* modes is the same as the block size. For AES this
-     * is 128 bits
-     */
+    * Initialize the decryption operation. IMPORTANT - ensure you use a key
+    * and IV size appropriate for your cipher
+    * In this example we are using 256 bit AES (i.e. a 256 bit key). The
+    * IV size for *most* modes is the same as the block size. For AES this
+    * is 128 bits
+    */
     if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv))
     {
         handleErrors();
@@ -89,7 +94,10 @@ int Encryption::decrypt(unsigned char* ciphertext, int ciphertext_len, unsigned 
 
     // Provide the message to be decrypted, and obtain the plaintext output. EVP_DecryptUpdate can be called multiple times if necessary.
     if(1 != EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len))
+    {
         handleErrors();
+        return -1;
+    }
 
     // update length of 'ciphertext_len'
     plaintext_len = len;
@@ -114,6 +122,5 @@ int Encryption::decrypt(unsigned char* ciphertext, int ciphertext_len, unsigned 
 void Encryption::handleErrors(void)
 {
     ERR_print_errors_fp(stderr);
-		LOG("Encryption::handleErrors :: reported an error to stderr");
-    //abort();
+    LOG("Encryption::handleErrors :: reported an error to stderr");
 }

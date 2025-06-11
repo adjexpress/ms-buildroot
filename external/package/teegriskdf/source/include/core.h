@@ -8,6 +8,15 @@
 #define TRUE  1
 #define FALSE 0
 
+#define HDK_LOG(PRIORITY, FORMATTED_MSG, ...) do { \
+    if (PRIORITY == FALSE)                         \
+        ;                                          \
+    else if (PRIORITY == TRUE)                     \
+        printf((FORMATTED_MSG), ##__VA_ARGS__);    \
+    else                                           \
+        ;                                          \
+} while(FALSE);
+
 #define __DEPRECATED_FUNCTION__
 
 #define BLOCK_SIZE_0x10 0x10
@@ -52,8 +61,11 @@ typedef struct _ROT {
     Uint8_t reserved[32];       // all 0x00
 } __attribute__ ((packed)) ROT; // 76 bytes
 
+// dump in HEX, buffer 'buffer' with size 'size' with priority to log in stdout. FALSE (do not log), TRUE (log it)
+void dump_buffer(Boolean priority, Uint8_t* buffer, size_t size);
+
 // dump in HEX, buffer 'buffer' with size 'size'
-void dump_buffer(Uint8_t* buffer, size_t size);
+void raw_dump_buffer(Uint8_t* buffer, size_t size);
 
 // allocationg a buffer with length 'size' bytes and putting 'value' in all bytes
 void* Alloc(size_t size, Uint8_t value);

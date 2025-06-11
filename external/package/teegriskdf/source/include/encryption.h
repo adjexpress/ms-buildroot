@@ -9,13 +9,13 @@
 #include "../openssl/kdf.h"
 
 // performing AES-128-ECB on buffer inside data with buffer inside key and returning the result as a vector_0x10
-vector_0x10 aes_128_ecb(vector_0x10* key, vector_0x10* data);
+vector_0x10 aes_128_ecb(const vector_0x10* key, const vector_0x10* data);
 
 // performing SHA256 on data into output buffer
-void sha256_encrypt(Uint8_t* output, Uint8_t* data, Uint64_t size);
+int sha256_encrypt(Uint8_t* output, const Uint8_t* data, Uint64_t size);
 
 // performing SHA512 on data into output buffer
-void sha512_encrypt(Uint8_t* output, Uint8_t* data, Uint64_t size);
+int sha512_encrypt(Uint8_t* output, const Uint8_t* data, Uint64_t size);
 
 // performing AES-GCM-256
 Int32_t gcm_decrypt(Uint8_t* source, 

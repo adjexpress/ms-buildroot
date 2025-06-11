@@ -1,53 +1,166 @@
 #include "../include/encryption.h"
 
-vector_0x10 aes_128_ecb(vector_0x10* key, vector_0x10* data)
+vector_0x10 aes_128_ecb(const vector_0x10* key, const vector_0x10* data) 
 {
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-    EVP_CIPHER_CTX_init(ctx);
-    EVP_EncryptInit_ex (ctx, EVP_aes_128_ecb(), NULL, key->data, NULL);
-    EVP_CIPHER_CTX_set_padding(ctx, 0);
-    Uint8_t buffer[BLOCK_SIZE_0x20];
-    int outlen;
-    EVP_EncryptUpdate(ctx, buffer, &outlen, data->data, data->size);
-
     vector_0x10 ret;
+    memset(&ret, 0, sizeof(ret));  // Zeroize output initially
+
+    // Input Validation
+    if (!key || !data)
+        return ret;  // Invalid input
+
+    // Key/Data Sanity Checks
+    if (key->size != BLOCK_SIZE_0x10)
+        return ret;  // Key must be 16 bytes
+
+    // OpenSSL Context Setup
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+        return ret;  // Context creation failed
+
+    // Initialize Encryption
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_128_ecb(), NULL, key->data, NULL) != 1) 
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        return ret;  // Init failed
+    }
+
+    // Disable padding (for ECB, this is mandatory for fixed-size blocks)
+    EVP_CIPHER_CTX_set_padding(ctx, 0);
+
+    // Encrypt Data
+    uint8_t buffer[BLOCK_SIZE_0x20];
+    int outlen = 0;
+
+    if (EVP_EncryptUpdate(ctx, buffer, &outlen, data->data, data->size) != 1) 
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        return ret;  // Encryption failed
+    }
+
+    // Copy the encrypted data (first block)
     memcpy(ret.data, buffer, outlen);
     ret.size = outlen;
 
-    EVP_EncryptFinal_ex(ctx, buffer, &outlen);
+    // Finalize Encryption -> Note: In ECB without padding, Final_ex shouldn't write anything.
+    if (EVP_EncryptFinal_ex(ctx, buffer, &outlen) != 1) 
+    {
+        EVP_CIPHER_CTX_free(ctx);
+        memset(&ret, 0, sizeof(ret));  // Wipe partial data on failure
+        return ret;
+    }
+
+    // Cleanup
+    EVP_CIPHER_CTX_free(ctx);
     return ret;
 }
 
-void sha256_encrypt(Uint8_t* output, Uint8_t* data, Uint64_t size)
+int sha256_encrypt(Uint8_t* output, const Uint8_t* data, Uint64_t size)
 {
+    // Input validation
+    if (!output || !data || size == 0)
+        return -1;  // Invalid arguments
+
+    // Zeroize output buffer to prevent leaks
     memset(output, 0, BLOCK_SIZE_0x20);
-	EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-	if (ctx)
+
+    // Initialize OpenSSL context
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx)
+        return -1;  // Context creation failed
+
+    // Initialize digest (SHA-256)
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) 
 	{
-		EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
-		EVP_DigestUpdate(ctx, data, size);
-		Uint8_t hash[BLOCK_SIZE_0x20];
-		Uint32_t  len_of_hash = 0;
-        EVP_DigestFinal_ex(ctx, hash, &len_of_hash);
-		memcpy(output, hash, len_of_hash);
-        return;
-	}
+        EVP_MD_CTX_free(ctx);
+        return -1;  // Digest init failed
+    }
+
+    // Update digest with input data
+    if (EVP_DigestUpdate(ctx, data, size) != 1) 
+	{
+        EVP_MD_CTX_free(ctx);
+        return -1;  // Digest update failed
+    }
+
+    uint8_t hash[BLOCK_SIZE_0x20];
+    unsigned int len_of_hash = 0;
+
+    // Finalize digest and get hash
+    if (EVP_DigestFinal_ex(ctx, hash, &len_of_hash) != 1) 
+	{
+        EVP_MD_CTX_free(ctx);
+        return -1;  // Digest finalization failed
+    }
+
+    // Verify hash length (SHA-256 should always be 32 bytes)
+    if (len_of_hash != BLOCK_SIZE_0x20) 
+	{
+        EVP_MD_CTX_free(ctx);
+        return -1;  // Unexpected hash size (should never happen for SHA-256)
+    }
+
+    // Securely copy hash to output
+    memcpy(output, hash, BLOCK_SIZE_0x20);
+
+    // Clean up OpenSSL context
+    EVP_MD_CTX_free(ctx);
+
+    return 0;  // Success
 }
 
-void sha512_encrypt(Uint8_t* output, Uint8_t* data, Uint64_t size)
+int sha512_encrypt(Uint8_t* output, const Uint8_t* data, Uint64_t size)
 {
+    // Input validation
+    if (!output || !data || size == 0)
+        return -1;  // Invalid arguments
+
+    // Zeroize output buffer to prevent leaks
     memset(output, 0, BLOCK_SIZE_0x40);
-	EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-	if (ctx)
+
+    // Initialize OpenSSL context
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx)
+        return -1;  // Context creation failed
+
+    // Initialize digest (SHA-512)
+    if (EVP_DigestInit_ex(ctx, EVP_sha512(), NULL) != 1) 
 	{
-		EVP_DigestInit_ex(ctx, EVP_sha512(), NULL);
-		EVP_DigestUpdate(ctx, data, size);
-		Uint8_t hash[BLOCK_SIZE_0x40];
-		Uint32_t len_of_hash = 0;
-		EVP_DigestFinal_ex(ctx, hash, &len_of_hash);        
-		memcpy(output, hash, len_of_hash);
-        return;
-	}
+        EVP_MD_CTX_free(ctx);
+        return -1;  // Digest init failed
+    }
+
+    // Update digest with input data
+    if (EVP_DigestUpdate(ctx, data, size) != 1) 
+	{
+        EVP_MD_CTX_free(ctx);
+        return -1;  // Digest update failed
+    }
+
+    uint8_t hash[BLOCK_SIZE_0x40];
+    unsigned int len_of_hash = 0;
+
+    // Finalize digest and get hash
+    if (EVP_DigestFinal_ex(ctx, hash, &len_of_hash) != 1) 
+	{
+        EVP_MD_CTX_free(ctx);
+        return -1;  // Digest finalization failed
+    }
+
+    // Verify hash length (SHA-256 should always be 32 bytes)
+    if (len_of_hash != BLOCK_SIZE_0x40) 
+	{
+        EVP_MD_CTX_free(ctx);
+        return -1;  // Unexpected hash size (should never happen for SHA-256)
+    }
+
+    // Securely copy hash to output
+    memcpy(output, hash, BLOCK_SIZE_0x40);
+
+    // Clean up OpenSSL context
+    EVP_MD_CTX_free(ctx);
+
+    return 0;  // Success
 }
 
 Int32_t gcm_decrypt(Uint8_t* source, 
@@ -218,8 +331,8 @@ Int32_t decrypt_encrypted_key(const char* encrypted_key_address, Uint8_t* key, U
     {
         safe_free(source);
         safe_free(buffer);
-        return dec;
     }
+	return dec;
 }
 
 

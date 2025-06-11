@@ -1,10 +1,10 @@
 #ifndef _ENCRYPTION__H__
 #define _ENCRYPTION__H__
 
-#ifdef __linux__
-#include <openssl/conf.h>
-#include <openssl/evp.h>
-#include <openssl/err.h>
+#ifdef __linux__ 
+#       include "../include/openssl/conf.h"
+#       include "../include/openssl/evp.h"
+#       include "../include/openssl/err.h"
 #elif defined _WIN32
 #		include "openssl/conf.h"
 #		include "openssl/evp.h"

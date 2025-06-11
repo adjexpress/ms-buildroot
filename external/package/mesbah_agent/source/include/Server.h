@@ -22,11 +22,12 @@ class Server {
 		StreamMode       sm_;
 		Packet*          internal_packet_;
 		File_Attributes* file_attributes_;
+		Encryption*      enc;
 
 	public:
 		/// Server CTOR. This is the only acceptable CTOR of the class
 		///
-		explicit Server         (StreamMode sm, unsigned int port_number);
+		explicit Server         (StreamMode sm, unsigned int port_number, Encryption* enc);
 		
 		/// Server DTOR. This is the only acceptable DTOR of the class
 		///

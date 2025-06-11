@@ -1,0 +1,1 @@
+fapna -2 users -2 =fapna /home/fapna /bin/bash sys,network,power,lp,wheel,autologin,audio,video,dialout,tape,bin,tty,netdev,lock,sshd,nobody,users Fapna Mesbah user
